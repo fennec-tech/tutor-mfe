@@ -1,5 +1,10 @@
 FROM docker.io/node:16.14-bullseye-slim AS base
 
+{% if APT_PROXY -%}
+RUN echo 'Acquire::{{ APT_PROXY | url_part('scheme') }}::Proxy "{{ APT_PROXY }}";' \
+    > /etc/apt/apt.conf.d/00proxy 
+{%- endif %}
+
 RUN apt update \
   && apt install -y git \
     # required for cwebp-bin
@@ -8,13 +13,17 @@ RUN apt update \
     autoconf libtool pkg-config zlib1g-dev \
     # additionally required for node-sass (on arm)
     python g++
+    
+{% if APT_PROXY -%}
+RUN rm /etc/apt/apt.conf.d/00proxy
+{%- endif %}
 
 RUN mkdir -p /openedx/app /openedx/env
 WORKDIR /openedx/app
 ENV PATH ./node_modules/.bin:${PATH}
 
 ######## i18n strings
-FROM base AS i18n
+FROM base AS i18n 
 COPY ./i18n /openedx/i18n
 RUN chmod a+x /openedx/i18n/*.js
 RUN echo "copying i18n data" \
@@ -41,7 +50,7 @@ RUN /openedx/i18n/i18n-merge.js /openedx/app/src/i18n/messages /openedx/i18n/{{ 
 FROM base AS {{ app["name"] }}-dev
 COPY --from={{ app["name"] }}-src /openedx/app/package.json /openedx/app/package.json
 COPY --from={{ app["name"] }}-src /openedx/app/package-lock.json /openedx/app/package-lock.json
-ARG NPM_REGISTRY=https://registry.npmjs.org/
+ARG NPM_REGISTRY={{ NPM_REGISTRY}}
 {{ patch("mfe-dockerfile-pre-npm-install") }}
 {# Required for building optipng on M1 #}
 ENV CPPFLAGS=-DPNG_ARM_NEON_OPT=0
